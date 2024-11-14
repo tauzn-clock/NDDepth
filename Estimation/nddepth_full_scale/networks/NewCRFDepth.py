@@ -115,8 +115,6 @@ class NewCRFDepth(nn.Module):
         self.min_depth = min_depth
         self.max_depth = max_depth
         
-        if not depth_anything_model is None: self.depth_anything_model = depth_anything_model.to(next(self.parameters()).device) # Hacky way to get device
-
         self.init_weights(pretrained=pretrained)
         
     def init_weights(self, pretrained=None):
@@ -167,9 +165,6 @@ class NewCRFDepth(nn.Module):
         
         # depth
         ppm_out = self.decoder(feats) # DX: Two parallel PSP decoder, tries to learn depth
-        depth_anything_img = F.interpolate(imgs, size=(518, 518), mode='bilinear', align_corners=False)
-        depth_anything_depth = self.depth_anything_model(depth_anything_img)
-        depth_anything_depth = F.interpolate(depth_anything_depth.unsqueeze(1), size=(120, 160), mode='bilinear', align_corners=False)
 
         e3 = self.crf3(feats[3], ppm_out) # DX: This is the GRU tuning process
         e3 = nn.PixelShuffle(2)(e3)
@@ -222,9 +217,6 @@ class NewCRFDepth(nn.Module):
         depth2 = dn_to_depth(n1_norm, distance, inv_K).clamp(0, self.max_depth)
         
         # DX: For some reason, image down scaled by 4 in the model
-
-        d1 = depth_anything_depth /depth_anything_depth.max()
-        #u1 = None
 
         if epoch < 5:
             depth1 = upsample(d1, scale_factor=4) * self.max_depth
@@ -430,12 +422,10 @@ class DispUnpack(nn.Module):
         self.conv2 = nn.Conv2d(hidden_dim, 16, 3, padding=1)
         self.relu = nn.ReLU(inplace=True)
         self.sigmoid = nn.Sigmoid()
-        self.pixel_shuffle = nn.PixelShuffle(4)
 
     def forward(self, x, output_size):
         x = self.relu(self.conv1(x))
         x = self.sigmoid(self.conv2(x)) # [b, 16, h/4, w/4]
-        x = self.pixel_shuffle(x)
 
         return x
 

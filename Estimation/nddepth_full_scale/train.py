@@ -19,8 +19,6 @@ from utils import post_process_depth, flip_lr, silog_loss, DN_to_distance, DN_to
 from networks.NewCRFDepth import NewCRFDepth
 from datetime import datetime
 
-from networks.depth_anything_interface import get_model
-
 parser = argparse.ArgumentParser(description='NDDepth PyTorch implementation.', fromfile_prefix_chars='@')
 parser.convert_arg_line_to_args = convert_arg_line_to_args
 
@@ -197,11 +195,8 @@ def main_worker(gpu, ngpus_per_node, args):
         dist.init_process_group(backend=args.dist_backend, init_method=args.dist_url, world_size=args.world_size, rank=args.rank)
 
     # model
-    
-    depth_anything_model = get_model(args.gpu, args.depth_anything_model_path, args.depth_anything_encoder, args.depth_anything_max_depth)
-    
-    model = NewCRFDepth(version=args.encoder, inv_depth=False, max_depth=args.max_depth, pretrained=args.pretrain, mode='triple', 
-                        depth_anything_model=depth_anything_model)
+        
+    model = NewCRFDepth(version=args.encoder, inv_depth=False, max_depth=args.max_depth, pretrained=args.pretrain, mode='triple')
     model.train()
 
     num_params = sum([np.prod(p.size()) for p in model.parameters()])

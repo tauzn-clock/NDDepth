@@ -17,10 +17,10 @@ torch.manual_seed(42)
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 train_dataset = ImageDataset('/scratchdata/nyu_data', '/scratchdata/nyu_data/data/nyu2_train.csv', transform=preprocess_transform)
-train_dataloader = DataLoader(train_dataset, batch_size=2, shuffle=True)
+train_dataloader = DataLoader(train_dataset, batch_size=8, shuffle=True)
 
 test_dataset = ImageDataset('/scratchdata/nyu_data', '/scratchdata/nyu_data/data/nyu2_test.csv', transform=preprocess_transform)
-test_dataloader = DataLoader(test_dataset, batch_size=2, shuffle=True)
+test_dataloader = DataLoader(test_dataset, batch_size=8, shuffle=True)
 
 config =  ModelConfig("micro07")
 model = Model(config).to(device)
@@ -31,9 +31,7 @@ for epoch in range(50):
     model.train()
     running_loss = 0.0
 
-    cnt = 0
     for i, x in enumerate(tqdm.tqdm(train_dataloader)):
-        cnt += 1
         for k in x.keys():
             x[k] = x[k].to(device)
             
@@ -50,9 +48,6 @@ for epoch in range(50):
         optimizer.step()
         
         running_loss += loss.item()
-        
-        if cnt == 10:
-            break
     
     print(f"Epoch {epoch} Loss: {running_loss / len(train_dataloader)}")
     

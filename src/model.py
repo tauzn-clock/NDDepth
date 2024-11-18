@@ -24,6 +24,11 @@ class ModelConfig():
             self.depths = [2, 2, 6, 2]
             self.num_heads = [3, 6, 12, 24]
             self.in_channels = [96, 192, 384, 768]
+        elif version[:-2] == 'micro':
+            self.embed_dim = 64
+            self.depths = [2, 2, 4, 2]
+            self.num_heads = [2, 4, 8, 16]
+            self.in_channels = [64, 128, 256, 512]
             
         self.win = 7
         self.crf_dims = [128, 256, 512, 1024]

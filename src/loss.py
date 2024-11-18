@@ -10,7 +10,7 @@ def silog_loss(depth_gt, depth_est):
     scale = 10.0
     d = torch.log(depth_est) - torch.log(depth_gt)
     batch_error = torch.sqrt((d ** 2).mean(dim=(2,3)) - variance_focus * (d.mean(dim=(2,3)) ** 2)) * scale
-    return batch_error.mean()
+    return batch_error
 
 def histogram_intersection_loss(a, b, num_bins=100):
     assert a.shape == b.shape, 'Input tensors must have the same shape'
@@ -37,7 +37,7 @@ def histogram_intersection_loss(a, b, num_bins=100):
 
         # The loss is the inverse of intersection, i.e., the smaller the intersection, the larger the loss
         loss[batch] = 1 - intersection
-    return loss.mean()
+    return loss
 
 def get_metrics(gt, pred):
     

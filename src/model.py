@@ -3,6 +3,7 @@ from torch import nn
 
 from transformers import Swinv2Config, UperNetConfig, UperNetForSemanticSegmentation
 from newcrf_layers import NewCRFChain
+from BasicUpdateBlockDepth import BasicUpdateBlockDepth
 
 class ModelConfig():
     def __init__(self, version):
@@ -52,6 +53,12 @@ class Model(nn.Module):
         self.dist_head_1 = DistanceHead(self.config.crf_dims[0])
         self.uncer_head_1 = UncerHead(self.config.crf_dims[0])
         
+        self.crf_chain_2 = NewCRFChain(self.config.in_channels, self.config.crf_dims, self.config.v_dims, self.config.win)
+        self.dist_head_2 = DistanceHead(self.config.crf_dims[0])
+        self.uncer_head_2 = UncerHead(self.config.crf_dims[0])
+        
+        self.update = BasicUpdateBlockDepth()
+        
     def forward(self, x):
         outputs = self.backbone.backbone.forward_with_filtered_kwargs(**x)
         
@@ -67,8 +74,18 @@ class Model(nn.Module):
         crf_out_1 = self.crf_chain_1(psp_out, features)     
         d1 = self.dist_head_1(crf_out_1)
         u1 = self.uncer_head_1(crf_out_1)
+        
+        crf_out_2 = self.crf_chain_2(psp_out, features)
+        d2 = self.dist_head_2(crf_out_2)
+        u2 = self.uncer_head_2(crf_out_2)
 
-        return None
+        context = features[0]
+        print("context", context.shape)
+        gru_hidden = torch.cat((crf_out_1, crf_out_2), 1)
+        print("gru_hidden", gru_hidden.shape)
+        depth1_list, depth2_list  = self.update(d1, u1, d2, u2, context, gru_hidden)
+
+        return depth1_list, depth2_list
 
 class DistanceHead(nn.Module):
     def __init__(self, input_dim=100):

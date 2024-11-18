@@ -57,7 +57,7 @@ class Model(nn.Module):
         self.dist_head_2 = DistanceHead(self.config.crf_dims[0])
         self.uncer_head_2 = UncerHead(self.config.crf_dims[0])
         
-        self.update = BasicUpdateBlockDepth()
+        self.update = BasicUpdateBlockDepth(context_dim=self.config.in_channels[0])
         
     def forward(self, x):
         outputs = self.backbone.backbone.forward_with_filtered_kwargs(**x)
@@ -67,7 +67,7 @@ class Model(nn.Module):
         logits = self.backbone.decode_head(features)
         logits = nn.functional.interpolate(logits, size=x.pixel_values.shape[2:], mode="bilinear", align_corners=False)
         
-        laterals = [lateral_conv(features[i]) for i, lateral_conv in enumerate(self.backbone .decode_head.lateral_convs)]
+        #laterals = [lateral_conv(features[i]) for i, lateral_conv in enumerate(self.backbone .decode_head.lateral_convs)]
             
         psp_out =self.backbone.decode_head.psp_forward(features)
         
@@ -80,9 +80,7 @@ class Model(nn.Module):
         u2 = self.uncer_head_2(crf_out_2)
 
         context = features[0]
-        print("context", context.shape)
         gru_hidden = torch.cat((crf_out_1, crf_out_2), 1)
-        print("gru_hidden", gru_hidden.shape)
         depth1_list, depth2_list  = self.update(d1, u1, d2, u2, context, gru_hidden)
 
         return depth1_list, depth2_list

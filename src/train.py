@@ -14,14 +14,16 @@ from loss import silog_loss, histogram_intersection_loss, get_metrics
 
 torch.manual_seed(42)
 
+device = "cuda" if torch.cuda.is_available() else "cpu"
+
 train_dataset = ImageDataset('/scratchdata/nyu_data', '/scratchdata/nyu_data/data/nyu2_train.csv', transform=preprocess_transform)
-train_dataloader = DataLoader(train_dataset, batch_size=1, shuffle=True)
+train_dataloader = DataLoader(train_dataset, batch_size=2, shuffle=True)
 
 test_dataset = ImageDataset('/scratchdata/nyu_data', '/scratchdata/nyu_data/data/nyu2_test.csv', transform=preprocess_transform)
-test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=True)
+test_dataloader = DataLoader(test_dataset, batch_size=2, shuffle=True)
 
 config =  ModelConfig("micro07")
-model = Model(config).to("cuda")
+model = Model(config).to(device)
 
 optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
 
@@ -33,7 +35,7 @@ for epoch in range(50):
     for i, x in enumerate(tqdm.tqdm(train_dataloader)):
         cnt += 1
         for k in x.keys():
-            x[k] = x[k].to("cuda")
+            x[k] = x[k].to(device)
             
         d1, d2 = model(x)
         
@@ -41,15 +43,15 @@ for epoch in range(50):
         del x
         d1 = F.interpolate(d1[-1], size=gt.shape[2:], mode='bilinear', align_corners=False)
         d2 = F.interpolate(d2[-1], size=gt.shape[2:], mode='bilinear', align_corners=False)
-        
-        loss = silog_loss(d1, gt) + histogram_intersection_loss(d2, gt) * 10
+                
+        loss = silog_loss(d1, gt).mean() + histogram_intersection_loss(d2, gt).mean() * 10
         
         loss.backward()
         optimizer.step()
         
         running_loss += loss.item()
         
-        if cnt == 100:
+        if cnt == 10:
             break
     
     print(f"Epoch {epoch} Loss: {running_loss / len(train_dataloader)}")
@@ -57,7 +59,7 @@ for epoch in range(50):
     model.eval()
     for i, x in enumerate(tqdm.tqdm(test_dataloader)):
         for k in x.keys():
-            x[k] = x[k].to("cuda")
+            x[k] = x[k].to(device)
             
         d1, d2 = model(x)
         

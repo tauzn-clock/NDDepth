@@ -15,7 +15,7 @@ def silog_loss(depth_gt, depth_est):
 def histogram_intersection_loss(a, b, num_bins=100):
     assert a.shape == b.shape, 'Input tensors must have the same shape'
     
-    loss = torch.zeros(a.shape[0])
+    loss = torch.zeros(a.shape[0]).to(a.device)
     
     for batch in range(a.shape[0]):
         
@@ -42,9 +42,9 @@ def histogram_intersection_loss(a, b, num_bins=100):
 def get_metrics(gt, pred):
     
     thresh = torch.maximum((gt / pred), (pred / gt))
-    d1 = (thresh < 1.25).mean()
-    d2 = (thresh < 1.25 ** 2).mean()
-    d3 = (thresh < 1.25 ** 3).mean()
+    d1 = (thresh < 1.25).int().float().mean()
+    d2 = (thresh < 1.25 ** 2).int().float().mean()
+    d3 = (thresh < 1.25 ** 3).int().float().mean()
 
     rms = (gt - pred) ** 2
     rms = torch.sqrt(rms.mean())

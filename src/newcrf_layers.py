@@ -89,7 +89,7 @@ class WindowAttention(nn.Module):
         # get pair-wise relative position index for each token inside the window
         coords_h = torch.arange(self.window_size[0])
         coords_w = torch.arange(self.window_size[1])
-        coords = torch.stack(torch.meshgrid([coords_h, coords_w]))  # 2, Wh, Ww
+        coords = torch.stack(torch.meshgrid([coords_h, coords_w]))  # 2, Wh, Ww  # TODO: Fix Warning
         coords_flatten = torch.flatten(coords, 1)  # 2, Wh*Ww
         relative_coords = coords_flatten[:, :, None] - coords_flatten[:, None, :]  # 2, Wh*Ww, Wh*Ww
         relative_coords = relative_coords.permute(1, 2, 0).contiguous()  # Wh*Ww, Wh*Ww, 2
@@ -431,3 +431,24 @@ class NewCRF(nn.Module):
         out = x_out.view(-1, H, W, self.embed_dim).permute(0, 3, 1, 2).contiguous()
 
         return out
+    
+class NewCRFChain(nn.Module):
+    
+    def __init__(self, in_channels, crf_dims, v_dims, win):
+        super().__init__()
+        
+        self.crf3 = NewCRF(input_dim=in_channels[3], embed_dim=crf_dims[3], window_size=win, v_dim=v_dims[3], num_heads=32)
+        self.crf2 = NewCRF(input_dim=in_channels[2], embed_dim=crf_dims[2], window_size=win, v_dim=v_dims[2], num_heads=16)
+        self.crf1 = NewCRF(input_dim=in_channels[1], embed_dim=crf_dims[1], window_size=win, v_dim=v_dims[1], num_heads=8)
+        self.crf0 = NewCRF(input_dim=in_channels[0], embed_dim=crf_dims[0], window_size=win, v_dim=v_dims[0], num_heads=4)
+            
+    def forward(self, psp_out, features):
+        e3 = self.crf3(features[3], psp_out) # DX: This is the GRU tuning process
+        e3 = nn.PixelShuffle(2)(e3)
+        e2 = self.crf2(features[2], e3)
+        e2 = nn.PixelShuffle(2)(e2)
+        e1 = self.crf1(features[1], e2)
+        e1 = nn.PixelShuffle(2)(e1)
+        e0 = self.crf0(features[0], e1)
+        
+        return e0

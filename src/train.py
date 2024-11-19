@@ -40,10 +40,7 @@ def main(local_rank, world_size):
 
     csv_file = [["silog", "abs_rel", "log10", "rms", "sq_rel", "log_rms", "d1", "d2", "d3"]]
     with open('metric.csv', mode='w', newline='') as file:
-        # Create a CSV writer object
         writer = csv.writer(file)
-        
-        # Write all rows at once
         writer.writerows(csv_file)
 
     config =  ModelConfig("tiny07")

@@ -9,57 +9,38 @@ def silog_loss(depth_gt, depth_est):
     variance_focus = 0.85
     scale = 10.0
     d = torch.log(depth_est) - torch.log(depth_gt)
-    batch_error = torch.sqrt((d ** 2).mean(dim=(2,3)) - variance_focus * (d.mean(dim=(2,3)) ** 2)) * scale
+    batch_error = torch.sqrt((d ** 2).mean(dim=(1,2,3)) - variance_focus * (d.mean(dim=(1,2,3)) ** 2)) * scale
     return batch_error
 
-def histogram_intersection_loss(a, b, num_bins=100):
-    assert a.shape == b.shape, 'Input tensors must have the same shape'
+def rms_loss(gt, pred):
+    assert gt.shape == pred.shape, 'Input tensors must have the same shape'
     scale = 10.0
     
-    loss = torch.zeros(a.shape[0]).to(a.device)
-    
-    for batch in range(a.shape[0]):
-        
-        a[batch] -= a[batch].min()
-        a[batch] /= a[batch].max()
-        b[batch] -= b[batch].min()
-        b[batch] /= b[batch].max()
-        
-        # Compute histograms (normalized over the range [0, 1])
-        hist_a = torch.histc(a[batch], bins=num_bins, min=0, max=1)
-        hist_b = torch.histc(b[batch], bins=num_bins, min=0, max=1)
-        
-        # Normalize histograms (so they sum to 1)
-        hist_a = hist_a / hist_a.sum()
-        hist_b = hist_b / hist_b.sum()
+    rms = (gt - pred) ** 2
+    rms = torch.sqrt(rms.mean(dim=(1,2,3))).mean()
 
-        # Compute histogram intersection (sum of minimums of the bins)
-        intersection = torch.sum(torch.min(hist_a, hist_b))
-
-        # The loss is the inverse of intersection, i.e., the smaller the intersection, the larger the loss
-        loss[batch] = 1 - intersection
-    return loss * scale
+    return - rms * scale
 
 def get_metrics(gt, pred):
     
     thresh = torch.maximum((gt / pred), (pred / gt))
-    d1 = (thresh < 1.25).int().float().mean()
-    d2 = (thresh < 1.25 ** 2).int().float().mean()
-    d3 = (thresh < 1.25 ** 3).int().float().mean()
+    d1 = (thresh < 1.25).int().float().mean(dim=(1,2,3)).mean()
+    d2 = (thresh < 1.25 ** 2).int().float().mean(dim=(1,2,3)).mean()
+    d3 = (thresh < 1.25 ** 3).int().float().mean(dim=(1,2,3)).mean()
 
     rms = (gt - pred) ** 2
-    rms = torch.sqrt(rms.mean())
+    rms = torch.sqrt(rms.mean(dim=(1,2,3))).mean()
 
     log_rms = (torch.log(gt) - torch.log(pred)) ** 2
-    log_rms = torch.sqrt(log_rms.mean())
+    log_rms = torch.sqrt(log_rms.mean(dim=(1,2,3))).mean()
 
-    abs_rel = torch.mean(torch.abs(gt - pred) / gt)
-    sq_rel = torch.mean(((gt - pred) ** 2) / gt)
+    abs_rel = (torch.abs(gt - pred) / gt).mean(dim=(1,2,3)).mean()
+    sq_rel = (((gt - pred) ** 2) / gt).mean(dim=(1,2,3)).mean()
 
     err = torch.log(pred) - torch.log(gt)
-    silog = torch.sqrt(torch.mean(err ** 2) - torch.mean(err) ** 2) * 100
+    silog = torch.sqrt((err ** 2).mean(dim=(1,2,3)) - (err).mean(dim=(1,2,3)) ** 2).mean() * 100
 
     err = torch.abs(torch.log10(pred) - torch.log10(gt))
-    log10 = torch.mean(err)
+    log10 = err.mean(dim=(1,2,3)).mean()
 
     return [silog, abs_rel, log10, rms, sq_rel, log_rms, d1, d2, d3]

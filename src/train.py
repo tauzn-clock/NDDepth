@@ -8,6 +8,10 @@ from torch.utils.data import DataLoader
 import torch.nn.functional as F
 import tqdm
 import csv
+import os
+import torch.distributed as dist
+from torch.nn.parallel import DistributedDataParallel as DDP
+import torch.multiprocessing as mp
 
 from model import Model, ModelConfig
 from dataloader import ImageDataset, preprocess_transform
@@ -15,72 +19,83 @@ from loss import silog_loss, rms_loss, get_metrics
 
 torch.manual_seed(42)
 
-train_dataset = ImageDataset('/scratchdata/nyu_data', '/scratchdata/nyu_data/data/nyu2_train.csv', transform=preprocess_transform)
-train_dataloader = DataLoader(train_dataset, batch_size=6, shuffle=True, pin_memory=True)
+def init_process_group(local_rank, world_size):
+    dist.init_process_group(
+        backend='nccl',  # Use NCCL backend for multi-GPU communication
+        rank=local_rank,
+        world_size=world_size
+    )
+    torch.cuda.set_device(local_rank)  # Set the GPU device for the current process
 
-test_dataset = ImageDataset('/scratchdata/nyu_data', '/scratchdata/nyu_data/data/nyu2_test.csv', transform=preprocess_transform)
-test_dataloader = DataLoader(test_dataset, batch_size=4, shuffle=True, pin_memory=True)
+def main(local_rank, world_size):
+    init_process_group(local_rank, world_size)
 
-csv_file = [["silog", "abs_rel", "log10", "rms", "sq_rel", "log_rms", "d1", "d2", "d3"]]
-with open('metric.csv', mode='w', newline='') as file:
-    # Create a CSV writer object
-    writer = csv.writer(file)
-    
-    # Write all rows at once
-    writer.writerows(csv_file)
+    train_dataset = ImageDataset('/scratchdata/nyu_data', '/scratchdata/nyu_data/data/nyu2_train.csv', transform=preprocess_transform)
+    train_sampler = torch.utils.data.DistributedSampler(train_dataset, num_replicas=world_size, rank=local_rank)
+    train_dataloader = DataLoader(train_dataset, batch_size=4, pin_memory=True, sampler=train_sampler)
 
-config =  ModelConfig("micro07")
-model = Model(config)
+    test_dataset = ImageDataset('/scratchdata/nyu_data', '/scratchdata/nyu_data/data/nyu2_test.csv', transform=preprocess_transform)
+    test_sampler = torch.utils.data.DistributedSampler(test_dataset, num_replicas=world_size, rank=local_rank)
+    test_dataloader = DataLoader(test_dataset, batch_size=4, pin_memory=True)
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-#if torch.cuda.device_count() > 1:
-#    print(f"Training on {torch.cuda.device_count()} GPUs!")
-#    model = nn.DataParallel(model)  # Wrap model for multi-GPU
-model = model.to(device)
-
-optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
-
-for epoch in range(50):
-    model.train()
-    running_loss = 0.0
-    for i, x in enumerate(tqdm.tqdm(train_dataloader)):
-        for k in x.keys():
-            x[k] = x[k].to(device)
-            
-        optimizer.zero_grad()
-
-        d1, d2 = model(x)
+    csv_file = [["silog", "abs_rel", "log10", "rms", "sq_rel", "log_rms", "d1", "d2", "d3"]]
+    with open('metric.csv', mode='w', newline='') as file:
+        # Create a CSV writer object
+        writer = csv.writer(file)
         
-        gt = x["depth_values"]
-        d1 = F.interpolate(d1[-1], size=gt.shape[2:], mode='bilinear', align_corners=False)
-        d2 = F.interpolate(d2[-1], size=gt.shape[2:], mode='bilinear', align_corners=False)
+        # Write all rows at once
+        writer.writerows(csv_file)
+
+    config =  ModelConfig("tiny07")
+    model = Model(config).to(local_rank)
+    model = DDP(model, device_ids=[local_rank], output_device=local_rank, find_unused_parameters=True)
+
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
+
+    for epoch in range(50):
+        model.train()
+        running_loss = 0.0
+        for i, x in enumerate(tqdm.tqdm(train_dataloader)):
+            for k in x.keys():
+                x[k] = x[k].to(local_rank)
                 
-        loss = silog_loss(d1, gt).mean() + rms_loss(d2, gt).mean()
-        
-        loss.backward()
-        optimizer.step()
-        
-        running_loss += loss.item()
-        
-        del x, gt, d1, d2
-    
-    print(f"Epoch {epoch} Loss: {running_loss / len(train_dataloader)}")
-    torch.save(model, 'model.pth')
-    
-    model.eval()
-    for i, x in enumerate(tqdm.tqdm(test_dataloader)):
-        for k in x.keys():
-            x[k] = x[k].to(device)
+            optimizer.zero_grad()
+
+            d1, d2 = model(x)
             
-        d1, d2 = model(x)
+            gt = x["depth_values"]
+            d1 = F.interpolate(d1[-1], size=gt.shape[2:], mode='bilinear', align_corners=False)
+            d2 = F.interpolate(d2[-1], size=gt.shape[2:], mode='bilinear', align_corners=False)
+                    
+            loss = silog_loss(d1, gt).sum() + rms_loss(d2, gt).sum()
+            
+            loss.backward()
+            optimizer.step()
+            
+            running_loss += loss.item()
+            
+        dist.destroy_process_group()
         
-        gt = x["depth_values"]
-        d1 = F.interpolate(d1[-1], size=gt.shape[2:], mode='bilinear', align_corners=False)
-        d2 = F.interpolate(d2[-1], size=gt.shape[2:], mode='bilinear', align_corners=False)
-        d = (d1 + d2) /2
+        print(f"Epoch {epoch} Loss: {running_loss / len(train_dataloader)}")
+        torch.save(model, 'model.pth')
         
-        metric = get_metrics(gt,d)
+        model.eval()
+        for i, x in enumerate(tqdm.tqdm(test_dataloader)):
+            for k in x.keys():
+                x[k] = x[k].to(device)
+                
+            d1, d2 = model(x)
+            
+            gt = x["depth_values"]
+            d1 = F.interpolate(d1[-1], size=gt.shape[2:], mode='bilinear', align_corners=False)
+            d2 = F.interpolate(d2[-1], size=gt.shape[2:], mode='bilinear', align_corners=False)
+            d = (d1 + d2) /2
+            
+            metric = get_metrics(gt,d)
+
+            del x, gt, d1, d2, d
         
+        dist.destroy_process_group()
         """
         new_metric_save = []
         for m in metric:
@@ -98,6 +113,12 @@ for epoch in range(50):
             writer = csv.writer(file)
             writer.writerow(metric)  # Write the new row only
         """
-    
-        del x, gt, d1, d2, d
-        
+def run_ddp(world_size):
+    # We spawn the processes for each GPU using Python's multiprocessing
+    mp.spawn(main, nprocs=world_size, args=(world_size,))
+
+if __name__ == '__main__':
+    os.environ["MASTER_ADDR"] = "localhost"
+    os.environ["MASTER_PORT"] = "12355"
+    world_size = torch.cuda.device_count()
+    run_ddp(world_size)

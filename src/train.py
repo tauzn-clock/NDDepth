@@ -32,11 +32,11 @@ def main(local_rank, world_size):
 
     train_dataset = ImageDataset('/scratchdata/nyu_data', '/scratchdata/nyu_data/data/nyu2_train.csv', transform=preprocess_transform)
     train_sampler = torch.utils.data.DistributedSampler(train_dataset, num_replicas=world_size, rank=local_rank)
-    train_dataloader = DataLoader(train_dataset, batch_size=4, pin_memory=True, sampler=train_sampler)
+    train_dataloader = DataLoader(train_dataset, batch_size=6, pin_memory=True, sampler=train_sampler)
 
     test_dataset = ImageDataset('/scratchdata/nyu_data', '/scratchdata/nyu_data/data/nyu2_test.csv', transform=preprocess_transform)
     test_sampler = torch.utils.data.DistributedSampler(test_dataset, num_replicas=world_size, rank=local_rank)
-    test_dataloader = DataLoader(test_dataset, batch_size=4, pin_memory=True)
+    test_dataloader = DataLoader(test_dataset, batch_size=1, pin_memory=True)
 
     csv_file = [["silog", "abs_rel", "log10", "rms", "sq_rel", "log_rms", "d1", "d2", "d3"]]
     with open('metric.csv', mode='w', newline='') as file:
@@ -58,7 +58,7 @@ def main(local_rank, world_size):
         for i, x in enumerate(tqdm.tqdm(train_dataloader)):
             for k in x.keys():
                 x[k] = x[k].to(local_rank)
-                
+                            
             optimizer.zero_grad()
 
             d1, d2 = model(x)
@@ -73,46 +73,35 @@ def main(local_rank, world_size):
             optimizer.step()
             
             running_loss += loss.item()
-            
-        dist.destroy_process_group()
-        
+                    
         print(f"Epoch {epoch} Loss: {running_loss / len(train_dataloader)}")
         torch.save(model, 'model.pth')
         
         model.eval()
+        tot_metric = [0 for _ in range(9)]
+        cnt = 0
         for i, x in enumerate(tqdm.tqdm(test_dataloader)):
             for k in x.keys():
-                x[k] = x[k].to(device)
+                x[k] = x[k].to(local_rank)
                 
             d1, d2 = model(x)
             
             gt = x["depth_values"]
             d1 = F.interpolate(d1[-1], size=gt.shape[2:], mode='bilinear', align_corners=False)
             d2 = F.interpolate(d2[-1], size=gt.shape[2:], mode='bilinear', align_corners=False)
-            d = (d1 + d2) /2
             
-            metric = get_metrics(gt,d)
+            metric = get_metrics(gt, (d1 + d2)/2)
+            for i in range(9): tot_metric[i] += metric[i].cpu().detach().item()
+            cnt+=1
 
-            del x, gt, d1, d2, d
-        
-        dist.destroy_process_group()
-        """
-        new_metric_save = []
-        for m in metric:
-            new_metric_save.append(m.item())
-            print(m.item())
-        print(new_metric_save)
-        
-        csv_file = []
-        with open("metric.csv", mode='r', newline='') as file:
-            reader = csv.reader(file)
-            for row in reader:
-                csv_file.append(row)  # Append each row to the data list
-        csv_file.append(new_metric_save)
+        for i in range(9): tot_metric[i]/=cnt
+        print(tot_metric)
         with open("metric.csv", mode='a', newline='') as file:  # Open in append mode
             writer = csv.writer(file)
-            writer.writerow(metric)  # Write the new row only
-        """
+            writer.writerow(tot_metric)  # Write the new row only
+        
+    dist.destroy_process_group()
+
 def run_ddp(world_size):
     # We spawn the processes for each GPU using Python's multiprocessing
     mp.spawn(main, nprocs=world_size, args=(world_size,))

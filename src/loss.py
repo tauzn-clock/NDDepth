@@ -17,7 +17,7 @@ def rms_loss(gt, pred):
     scale = 10.0
     
     rms = (gt - pred) ** 2
-    rms = torch.sqrt(rms.mean(dim=(1,2,3))).mean()
+    rms = torch.sqrt(rms.mean(dim=(1,2,3)))
 
     return - rms * scale
 

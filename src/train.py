@@ -11,7 +11,7 @@ import csv
 
 from model import Model, ModelConfig
 from dataloader import ImageDataset, preprocess_transform
-from loss import silog_loss, histogram_intersection_loss, get_metrics
+from loss import silog_loss, rms_loss, get_metrics
 
 torch.manual_seed(42)
 
@@ -55,7 +55,7 @@ for epoch in range(50):
         d1 = F.interpolate(d1[-1], size=gt.shape[2:], mode='bilinear', align_corners=False)
         d2 = F.interpolate(d2[-1], size=gt.shape[2:], mode='bilinear', align_corners=False)
                 
-        loss = silog_loss(d1, gt).mean() #+ histogram_intersection_loss(d2, gt).mean()
+        loss = silog_loss(d1, gt).mean() + rms_loss(d2, gt).mean()
         
         loss.backward()
         optimizer.step()

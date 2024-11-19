@@ -16,10 +16,10 @@ from loss import silog_loss, histogram_intersection_loss, get_metrics
 torch.manual_seed(42)
 
 train_dataset = ImageDataset('/scratchdata/nyu_data', '/scratchdata/nyu_data/data/nyu2_train.csv', transform=preprocess_transform)
-train_dataloader = DataLoader(train_dataset, batch_size=6, shuffle=True)
+train_dataloader = DataLoader(train_dataset, batch_size=6, shuffle=True, pin_memory=True)
 
 test_dataset = ImageDataset('/scratchdata/nyu_data', '/scratchdata/nyu_data/data/nyu2_test.csv', transform=preprocess_transform)
-test_dataloader = DataLoader(test_dataset, batch_size=4, shuffle=True)
+test_dataloader = DataLoader(test_dataset, batch_size=4, shuffle=True, pin_memory=True)
 
 csv_file = [["silog", "abs_rel", "log10", "rms", "sq_rel", "log_rms", "d1", "d2", "d3"]]
 with open('metric.csv', mode='w', newline='') as file:
@@ -47,20 +47,22 @@ for epoch in range(50):
         for k in x.keys():
             x[k] = x[k].to(device)
             
+        optimizer.zero_grad()
+
         d1, d2 = model(x)
         
         gt = x["depth_values"]
         d1 = F.interpolate(d1[-1], size=gt.shape[2:], mode='bilinear', align_corners=False)
         d2 = F.interpolate(d2[-1], size=gt.shape[2:], mode='bilinear', align_corners=False)
                 
-        loss = silog_loss(d1, gt).mean() + histogram_intersection_loss(d2, gt).mean() * 10
+        loss = silog_loss(d1, gt).mean() #+ histogram_intersection_loss(d2, gt).mean()
         
         loss.backward()
         optimizer.step()
         
         running_loss += loss.item()
         
-    del x, gt, d1, d2
+        del x, gt, d1, d2
     
     print(f"Epoch {epoch} Loss: {running_loss / len(train_dataloader)}")
     torch.save(model, 'model.pth')
@@ -97,5 +99,5 @@ for epoch in range(50):
             writer.writerow(metric)  # Write the new row only
         """
     
-    del x, gt, d1, d2, d
+        del x, gt, d1, d2, d
         

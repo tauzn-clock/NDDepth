@@ -16,7 +16,7 @@ COPY ./get_custom_scikit_image.sh /get_custom_scikit_image.sh
 RUN chmod +x /get_custom_scikit_image.sh
 RUN /get_custom_scikit_image.sh
 
-RUN pip3 install matplotlib tqdm tensorboardX timm mmcv open3d xformers transformers mmcv-full
+RUN pip3 install matplotlib tqdm tensorboardX timm mmcv open3d xformers transformers mmcv-full ipykernel
 
 RUN git clone --recurse-submodules https://github.com/tauzn-clock/NDDepth 
 WORKDIR /NDDepth

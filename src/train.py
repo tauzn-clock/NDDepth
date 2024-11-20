@@ -32,7 +32,7 @@ def main(local_rank, world_size):
 
     train_dataset = ImageDataset('/scratchdata/nyu_data', '/scratchdata/nyu_data/data/nyu2_train.csv', transform=preprocess_transform)
     train_sampler = torch.utils.data.DistributedSampler(train_dataset, num_replicas=world_size, rank=local_rank)
-    train_dataloader = DataLoader(train_dataset, batch_size=7, pin_memory=True, sampler=train_sampler)
+    train_dataloader = DataLoader(train_dataset, batch_size=4, pin_memory=True, sampler=train_sampler)
 
     test_dataset = ImageDataset('/scratchdata/nyu_data', '/scratchdata/nyu_data/data/nyu2_test.csv', transform=preprocess_transform)
     test_sampler = torch.utils.data.DistributedSampler(test_dataset, num_replicas=world_size, rank=local_rank)
@@ -43,7 +43,7 @@ def main(local_rank, world_size):
         writer = csv.writer(file)
         writer.writerows(csv_file)
 
-    config =  ModelConfig("tiny07")
+    config =  ModelConfig("large07")
     model = Model(config).to(local_rank)
     model = DDP(model, device_ids=[local_rank], output_device=local_rank, find_unused_parameters=True)
 

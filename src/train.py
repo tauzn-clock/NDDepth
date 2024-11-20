@@ -32,11 +32,11 @@ def main(local_rank, world_size):
 
     train_dataset = ImageDataset('/scratchdata/nyu_data', '/scratchdata/nyu_data/data/nyu2_train.csv', transform=preprocess_transform)
     train_sampler = torch.utils.data.DistributedSampler(train_dataset, num_replicas=world_size, rank=local_rank)
-    train_dataloader = DataLoader(train_dataset, batch_size=8, pin_memory=True, sampler=train_sampler)
+    train_dataloader = DataLoader(train_dataset, batch_size=7, pin_memory=True, sampler=train_sampler)
 
     test_dataset = ImageDataset('/scratchdata/nyu_data', '/scratchdata/nyu_data/data/nyu2_test.csv', transform=preprocess_transform)
     test_sampler = torch.utils.data.DistributedSampler(test_dataset, num_replicas=world_size, rank=local_rank)
-    test_dataloader = DataLoader(test_dataset, batch_size=2, pin_memory=True)
+    test_dataloader = DataLoader(test_dataset, batch_size=1, pin_memory=True)
 
     csv_file = [["silog", "abs_rel", "log10", "rms", "sq_rel", "log_rms", "d1", "d2", "d3"]]
     with open('metric.csv', mode='w', newline='') as file:

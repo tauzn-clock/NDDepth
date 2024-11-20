@@ -69,8 +69,8 @@ class Model(nn.Module):
         
         features = outputs.feature_maps
 
-        logits = self.backbone.decode_head(features)
-        logits = nn.functional.interpolate(logits, size=x["pixel_values"].shape[2:], mode="bilinear", align_corners=False)
+        #logits = self.backbone.decode_head(features)
+        #logits = nn.functional.interpolate(logits, size=x["pixel_values"].shape[2:], mode="bilinear", align_corners=False)
         
         #laterals = [lateral_conv(features[i]) for i, lateral_conv in enumerate(self.backbone .decode_head.lateral_convs)]
             

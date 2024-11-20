@@ -15,7 +15,7 @@ import torch.multiprocessing as mp
 
 from model import Model, ModelConfig
 from dataloader import ImageDataset, preprocess_transform
-from loss import silog_loss, rms_loss, get_metrics
+from loss import silog_loss, get_metrics
 
 torch.manual_seed(42)
 
@@ -32,11 +32,11 @@ def main(local_rank, world_size):
 
     train_dataset = ImageDataset('/scratchdata/nyu_data', '/scratchdata/nyu_data/data/nyu2_train.csv', transform=preprocess_transform)
     train_sampler = torch.utils.data.DistributedSampler(train_dataset, num_replicas=world_size, rank=local_rank)
-    train_dataloader = DataLoader(train_dataset, batch_size=6, pin_memory=True, sampler=train_sampler)
+    train_dataloader = DataLoader(train_dataset, batch_size=8, pin_memory=True, sampler=train_sampler)
 
     test_dataset = ImageDataset('/scratchdata/nyu_data', '/scratchdata/nyu_data/data/nyu2_test.csv', transform=preprocess_transform)
     test_sampler = torch.utils.data.DistributedSampler(test_dataset, num_replicas=world_size, rank=local_rank)
-    test_dataloader = DataLoader(test_dataset, batch_size=1, pin_memory=True)
+    test_dataloader = DataLoader(test_dataset, batch_size=2, pin_memory=True)
 
     csv_file = [["silog", "abs_rel", "log10", "rms", "sq_rel", "log_rms", "d1", "d2", "d3"]]
     with open('metric.csv', mode='w', newline='') as file:
@@ -47,7 +47,7 @@ def main(local_rank, world_size):
     model = Model(config).to(local_rank)
     model = DDP(model, device_ids=[local_rank], output_device=local_rank, find_unused_parameters=True)
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
 
     for epoch in range(50):
         model.train()
@@ -75,20 +75,26 @@ def main(local_rank, world_size):
             loss_depth1_0 = silog_loss(d1_list[0], gt)
             loss_depth2_0 = silog_loss(d2_list[0], gt)
 
+            loss_depth1 = 0
+            loss_depth2 = 0
             weights_sum = 0
             for i in range(len(d1_list) - 1):
                 loss_depth1 += (0.85**(len(d1_list)-i-2)) * silog_loss(d1_list[i + 1], gt)
                 loss_depth2 += (0.85**(len(d2_list)-i-2)) * silog_loss(d2_list[i + 1], gt)
-                
                 weights_sum += 0.85**(len(d1_list)-i-2)
 
             loss = (loss_depth1 + loss_depth2) / weights_sum + loss_depth1_0 + loss_depth2_0 + loss_uncer1 + loss_uncer2
-            
+            loss = loss.mean()
+
             loss.backward()
+
             optimizer.step()
             
             running_loss += loss.item()
-                    
+        # Reduce learning rate
+        for param_group in optimizer.param_groups:
+            param_group['lr'] *= 0.9999
+        print(param_group['lr'])
         print(f"Epoch {epoch} Loss: {running_loss / len(train_dataloader)}")
         torch.save(model.module.state_dict(), 'model.pth')
         
@@ -99,11 +105,11 @@ def main(local_rank, world_size):
             for k in x.keys():
                 x[k] = x[k].to(local_rank)
                 
-            d1, d2 = model(x)
+            d1_list, _, d2_list, _ = model(x)
             
             gt = x["depth_values"]
-            d1 = F.interpolate(d1[-1], size=gt.shape[2:], mode='bilinear', align_corners=False)
-            d2 = F.interpolate(d2[-1], size=gt.shape[2:], mode='bilinear', align_corners=False)
+            d1 = F.interpolate(d1_list[-1], size=gt.shape[2:], mode='bilinear', align_corners=False)
+            d2 = F.interpolate(d2_list[-1], size=gt.shape[2:], mode='bilinear', align_corners=False)
             
             metric = get_metrics(gt, (d1 + d2)/2)
             for i in range(9): tot_metric[i] += metric[i].cpu().detach().item()

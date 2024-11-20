@@ -58,13 +58,31 @@ def main(local_rank, world_size):
                             
             optimizer.zero_grad()
 
-            d1, d2 = model(x)
-            
+            d1_list, u1, d2_list, u2 = model(x)
+
             gt = x["depth_values"]
-            d1 = F.interpolate(d1[-1], size=gt.shape[2:], mode='bilinear', align_corners=False)
-            d2 = F.interpolate(d2[-1], size=gt.shape[2:], mode='bilinear', align_corners=False)
-                    
-            loss = silog_loss(d1, gt).sum() + rms_loss(d2, gt).sum()
+            for i in range(len(d1_list)): d1_list[i] = F.interpolate(d1_list[i], size=gt.shape[2:], mode='bilinear', align_corners=False)
+            for i in range(len(d2_list)): d2_list[i] = F.interpolate(d2_list[i], size=gt.shape[2:], mode='bilinear', align_corners=False)
+            u1 = F.interpolate(u1, size=gt.shape[2:], mode='bilinear', align_corners=False)
+            u2 = F.interpolate(u2, size=gt.shape[2:], mode='bilinear', align_corners=False)
+
+            uncer1_gt = torch.exp(-5 * torch.abs(gt - d1_list[0].detach()) / (gt + d1_list[0].detach() + 1e-7))
+            uncer2_gt = torch.exp(-5 * torch.abs(gt - d2_list[0].detach()) / (gt + d2_list[0].detach() + 1e-7))
+            
+            loss_uncer1 = torch.abs(u1-uncer1_gt).mean()
+            loss_uncer2 = torch.abs(u2-uncer2_gt).mean()
+            
+            loss_depth1_0 = silog_loss(d1_list[0], gt)
+            loss_depth2_0 = silog_loss(d2_list[0], gt)
+
+            weights_sum = 0
+            for i in range(len(d1_list) - 1):
+                loss_depth1 += (0.85**(len(d1_list)-i-2)) * silog_loss(d1_list[i + 1], gt)
+                loss_depth2 += (0.85**(len(d2_list)-i-2)) * silog_loss(d2_list[i + 1], gt)
+                
+                weights_sum += 0.85**(len(d1_list)-i-2)
+
+            loss = (loss_depth1 + loss_depth2) / weights_sum + loss_depth1_0 + loss_depth2_0 + loss_uncer1 + loss_uncer2
             
             loss.backward()
             optimizer.step()
@@ -72,7 +90,7 @@ def main(local_rank, world_size):
             running_loss += loss.item()
                     
         print(f"Epoch {epoch} Loss: {running_loss / len(train_dataloader)}")
-        torch.save(model, 'model.pth')
+        torch.save(model.module.state_dict(), 'model.pth')
         
         model.eval()
         tot_metric = [0 for _ in range(9)]

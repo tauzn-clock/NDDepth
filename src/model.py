@@ -88,7 +88,7 @@ class Model(nn.Module):
         gru_hidden = torch.cat((crf_out_1, crf_out_2), 1)
         depth1_list, depth2_list  = self.update(d1, u1, d2, u2, context, gru_hidden)
 
-        return depth1_list, depth2_list
+        return depth1_list, u1, depth2_list, u2
 
 class DistanceHead(nn.Module):
     def __init__(self, input_dim=100):

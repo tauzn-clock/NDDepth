@@ -14,7 +14,8 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 import torch.multiprocessing as mp
 
 from model import Model, ModelConfig
-from dataloader import ImageDataset, preprocess_transform
+from dataloader.BaseDataloader import BaseImageDataset
+from dataloader.NYUDataloader import NYUImageData
 from loss import silog_loss, get_metrics
 
 torch.manual_seed(42)
@@ -30,11 +31,11 @@ def init_process_group(local_rank, world_size):
 def main(local_rank, world_size):
     init_process_group(local_rank, world_size)
 
-    train_dataset = ImageDataset('/scratchdata/nyu_data', '/scratchdata/nyu_data/data/nyu2_train.csv', transform=preprocess_transform)
+    train_dataset = BaseImageDataset('train', NYUImageData, '/scratchdata/nyu_data', '/scratchdata/nyu_data/data/nyu2_train.csv')
     train_sampler = torch.utils.data.DistributedSampler(train_dataset, num_replicas=world_size, rank=local_rank)
     train_dataloader = DataLoader(train_dataset, batch_size=4, pin_memory=True, sampler=train_sampler)
 
-    test_dataset = ImageDataset('/scratchdata/nyu_data', '/scratchdata/nyu_data/data/nyu2_test.csv', transform=preprocess_transform)
+    test_dataset = BaseImageDataset('test', NYUImageData, '/scratchdata/nyu_data', '/scratchdata/nyu_data/data/nyu2_test.csv')
     test_sampler = torch.utils.data.DistributedSampler(test_dataset, num_replicas=world_size, rank=local_rank)
     test_dataloader = DataLoader(test_dataset, batch_size=1, pin_memory=True, sampler=test_sampler)
 

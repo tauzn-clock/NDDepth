@@ -33,7 +33,7 @@ def main(local_rank, world_size):
 
     train_dataset = BaseImageDataset('train', NYUImageData, '/scratchdata/nyu_data', '/scratchdata/nyu_data/data/nyu2_train.csv')
     train_sampler = torch.utils.data.DistributedSampler(train_dataset, num_replicas=world_size, rank=local_rank)
-    train_dataloader = DataLoader(train_dataset, batch_size=4, pin_memory=True, sampler=train_sampler)
+    train_dataloader = DataLoader(train_dataset, batch_size=6, pin_memory=True, sampler=train_sampler)
 
     test_dataset = BaseImageDataset('test', NYUImageData, '/scratchdata/nyu_data', '/scratchdata/nyu_data/data/nyu2_test.csv')
     test_sampler = torch.utils.data.DistributedSampler(test_dataset, num_replicas=world_size, rank=local_rank)
@@ -44,7 +44,7 @@ def main(local_rank, world_size):
         writer = csv.writer(file)
         writer.writerows(csv_file)
 
-    config =  ModelConfig("large07")
+    config =  ModelConfig("tiny07")
     model = Model(config).to(local_rank)
     model = DDP(model, device_ids=[local_rank], output_device=local_rank, find_unused_parameters=True)
 
@@ -56,8 +56,6 @@ def main(local_rank, world_size):
         for i, x in enumerate(tqdm.tqdm(train_dataloader)):
             for k in x.keys():
                 x[k] = x[k].to(local_rank)
-                            
-            optimizer.zero_grad()
 
             d1_list, u1, d2_list, u2 = model(x)
 
@@ -87,8 +85,8 @@ def main(local_rank, world_size):
             loss = (loss_depth1 + loss_depth2) / weights_sum + loss_depth1_0 + loss_depth2_0 + loss_uncer1 + loss_uncer2
             loss = loss.mean()
 
+            optimizer.zero_grad()
             loss.backward()
-
             optimizer.step()
             
             running_loss += loss.item()

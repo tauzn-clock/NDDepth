@@ -55,7 +55,7 @@ def preprocess_transform(input):
     output = {}
     output["pixel_values"] = img_transform(input.pixel_values)
     output["depth_values"] = depth_transform(input.depth_values)
-    output["mask"] = mask_transform(input.mask)
+    output["mask"] = mask_transform(input.mask)==1
 
     return output
 

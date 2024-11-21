@@ -20,14 +20,14 @@ class NYUImageData(BaseImageData):
         H, W = self.pixel_values.size
 
         mask = np.zeros((W,H), dtype=np.bool)
-        mask[20:460, 20:620] = True
+        mask[10:470, 10:630] = True
 
         # Remove max and min values
         depth_np = np.array(self.depth_values)
         max_min_mask = (depth_np == depth_np.max()) & (depth_np == depth_np.min())
         mask = mask & ~max_min_mask
 
-        self.mask = mask
+        self.mask = Image.fromarray(mask)
         
     def to_train(self):
         return preprocess_transform(train_transform(self))
@@ -47,10 +47,16 @@ def preprocess_transform(input):
         transforms.ToTensor()
     ])
     
+    mask_transform = transforms.Compose([
+        #transforms.Resize((512, 512)),
+        transforms.ToTensor()
+    ])
+
     output = {}
     output["pixel_values"] = img_transform(input.pixel_values)
     output["depth_values"] = depth_transform(input.depth_values)
-    
+    output["mask"] = mask_transform(input.mask)
+
     return output
 
 def train_transform(input):
@@ -69,10 +75,12 @@ def train_transform(input):
     if random.uniform(0,1) < 0.5:
         input.pixel_values = input.pixel_values.transpose(Image.FLIP_LEFT_RIGHT)
         input.depth_values = input.depth_values.transpose(Image.FLIP_LEFT_RIGHT)
+        input.mask = input.mask.transpose(Image.FLIP_LEFT_RIGHT)
 
     # Rotate
     deg = random.uniform(-5,5)
     input.pixel_values = input.pixel_values.rotate(deg)
     input.depth_values = input.depth_values.rotate(deg)
+    input.mask = input.mask.rotate(deg)
 
     return input

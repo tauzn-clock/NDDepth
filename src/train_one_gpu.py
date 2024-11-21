@@ -31,7 +31,7 @@ with open('metric.csv', mode='w', newline='') as file:
     writer = csv.writer(file)
     writer.writerows(csv_file)
 
-local_rank = "cuda"
+local_rank = "cuda:7"
 
 config =  ModelConfig("tiny07")
 model = Model(config).to(local_rank)
@@ -58,20 +58,18 @@ for epoch in range(50):
         uncer1_gt = torch.exp(-5 * torch.abs(gt - d1_list[0].detach()) / (gt + d1_list[0].detach() + 1e-7))
         uncer2_gt = torch.exp(-5 * torch.abs(gt - d2_list[0].detach()) / (gt + d2_list[0].detach() + 1e-7))
         
-        loss_uncer1 = torch.abs(u1-uncer1_gt).mean()
-        loss_uncer2 = torch.abs(u2-uncer2_gt).mean()
-        
-        loss_depth1_0 = silog_loss(d1_list[0], gt)
-        print(loss_depth1_0)
-        loss_depth2_0 = silog_loss(d2_list[0], gt)
-        print(loss_depth2_0)
+        loss_uncer1 = torch.abs(u1-uncer1_gt)[x["mask"]].mean()
+        loss_uncer2 = torch.abs(u2-uncer2_gt)[x["mask"]].mean()
+
+        loss_depth1_0 = silog_loss(d1_list[0], gt, x["mask"])
+        loss_depth2_0 = silog_loss(d2_list[0], gt, x["mask"])
 
         loss_depth1 = 0
         loss_depth2 = 0
         weights_sum = 0
         for i in range(len(d1_list) - 1):
-            loss_depth1 += (0.85**(len(d1_list)-i-2)) * silog_loss(d1_list[i + 1], gt)
-            loss_depth2 += (0.85**(len(d2_list)-i-2)) * silog_loss(d2_list[i + 1], gt)
+            loss_depth1 += (0.85**(len(d1_list)-i-2)) * silog_loss(d1_list[i + 1], gt, x["mask"])
+            loss_depth2 += (0.85**(len(d2_list)-i-2)) * silog_loss(d2_list[i + 1], gt, x["mask"])
             weights_sum += 0.85**(len(d1_list)-i-2)
 
         loss = (loss_depth1 + loss_depth2) / weights_sum + loss_depth1_0 + loss_depth2_0 + loss_uncer1 + loss_uncer2
@@ -90,7 +88,6 @@ for epoch in range(50):
         param_group['lr'] *= 0.9999
     print(param_group['lr'])
     print(f"Epoch {epoch} Loss: {running_loss / len(train_dataloader)}")
-    torch.save(model.module.state_dict(), 'model.pth')
     
     model.eval()
     tot_metric = [0 for _ in range(9)]

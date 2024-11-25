@@ -15,7 +15,7 @@ class NYUImageData(BaseImageData):
         
         self.pixel_values = Image.open(os.path.join(root, args[0]))
         self.depth_values = Image.open(os.path.join(root, args[1]))
-        self.normal_values = None
+        self.normal_values = Image.open(os.path.join(root, args[2]))
 
         H, W = self.pixel_values.size
 
@@ -52,10 +52,16 @@ def preprocess_transform(input):
         transforms.ToTensor()
     ])
 
+    normal_transform = transforms.Compose([
+        #transforms.Resize((512, 512)),
+        transforms.ToTensor()
+    ])
+
     output = {}
     output["pixel_values"] = img_transform(input.pixel_values)
     output["depth_values"] = depth_transform(input.depth_values)
     output["mask"] = mask_transform(input.mask)==1
+    output["normal_values"] = normal_transform(input.normal_values)
 
     return output
 
@@ -76,11 +82,13 @@ def train_transform(input):
         input.pixel_values = input.pixel_values.transpose(Image.FLIP_LEFT_RIGHT)
         input.depth_values = input.depth_values.transpose(Image.FLIP_LEFT_RIGHT)
         input.mask = input.mask.transpose(Image.FLIP_LEFT_RIGHT)
+        input.normal_values = input.normal_values.transpose(Image.FLIP_LEFT_RIGHT)
 
     # Rotate
     deg = random.uniform(-5,5)
     input.pixel_values = input.pixel_values.rotate(deg)
     input.depth_values = input.depth_values.rotate(deg)
     input.mask = input.mask.rotate(deg)
+    input.normal_values = input.normal_values.rotate(deg)
 
     return input

@@ -31,11 +31,11 @@ def init_process_group(local_rank, world_size):
 def main(local_rank, world_size):
     init_process_group(local_rank, world_size)
 
-    train_dataset = BaseImageDataset('train', NYUImageData, '/scratchdata/nyu_data', '/scratchdata/nyu_data/data/nyu2_train.csv')
+    train_dataset = BaseImageDataset('train', NYUImageData, '/scratchdata/nyu_depth_v2/sync', '/scratchdata/nyu_depth_v2/sync/train.csv')
     train_sampler = torch.utils.data.DistributedSampler(train_dataset, num_replicas=world_size, rank=local_rank)
     train_dataloader = DataLoader(train_dataset, batch_size=6, pin_memory=True, sampler=train_sampler)
 
-    test_dataset = BaseImageDataset('test', NYUImageData, '/scratchdata/nyu_data', '/scratchdata/nyu_data/data/nyu2_test.csv')
+    test_dataset = BaseImageDataset('test', NYUImageData, '/scratchdata/nyu_depth_v2/sync', '/scratchdata/nyu_depth_v2/sync/test.csv')
     test_sampler = torch.utils.data.DistributedSampler(test_dataset, num_replicas=world_size, rank=local_rank)
     test_dataloader = DataLoader(test_dataset, batch_size=1, pin_memory=True, sampler=test_sampler)
 

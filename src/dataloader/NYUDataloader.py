@@ -16,6 +16,15 @@ class NYUImageData(BaseImageData):
         self.pixel_values = Image.open(os.path.join(root, args[0]))
         self.depth_values = Image.open(os.path.join(root, args[1]))
         self.normal_values = Image.open(os.path.join(root, args[2]))
+        fx = float(args[3])
+        fy = float(args[4])
+        cx = float(args[5])
+        cy = float(args[6])
+
+        self.camera_intrinsics = np.array([[fx, 0, cx, 0],
+                                           [0, fy, cy, 0],
+                                           [0, 0, 1, 0],
+                                           [0, 0, 0, 1]], dtype=np.float32)
 
         H, W = self.pixel_values.size
 
@@ -62,6 +71,7 @@ def preprocess_transform(input):
     output["depth_values"] = depth_transform(input.depth_values)
     output["mask"] = mask_transform(input.mask)==1
     output["normal_values"] = normal_transform(input.normal_values)
+    output["camera_intrinsics"] = torch.tensor(input.camera_intrinsics)
 
     return output
 

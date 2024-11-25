@@ -52,8 +52,8 @@ def main(local_rank, world_size):
 
     for epoch in range(50):
         model.train()
-        running_loss = 0.0
-        for _, x in enumerate(tqdm.tqdm(train_dataloader)):
+        loop = tqdm.tqdm(train_dataloader, desc=f"Epoch {epoch+1}", unit="batch")
+        for _, x in enumerate(loop):
             for k in x.keys():
                 x[k] = x[k].to(local_rank)
 
@@ -85,13 +85,11 @@ def main(local_rank, world_size):
             loss = (loss_depth1 + loss_depth2) / weights_sum + loss_depth1_0 + loss_depth2_0 + loss_uncer1 + loss_uncer2
             loss = loss.mean()
 
-            print(loss)
-
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
             
-            running_loss += loss.item()
+            loop.set_postfix(loss=loss.item())
         # Reduce learning rate
         for param_group in optimizer.param_groups:
             param_group['lr'] *= 0.9999

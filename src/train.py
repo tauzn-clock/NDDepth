@@ -48,9 +48,9 @@ def main(local_rank, world_size):
     model = Model(config).to(local_rank)
     model = DDP(model, device_ids=[local_rank], output_device=local_rank, find_unused_parameters=True)
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
 
-    for epoch in range(50):
+    for epoch in range(1):
         model.train()
         loop = tqdm.tqdm(train_dataloader, desc=f"Epoch {epoch+1}", unit="batch")
         for _, x in enumerate(loop):
@@ -94,7 +94,6 @@ def main(local_rank, world_size):
         for param_group in optimizer.param_groups:
             param_group['lr'] *= 0.9999
         print(param_group['lr'])
-        print(f"Epoch {epoch} Loss: {running_loss / len(train_dataloader)}")
         torch.save(model.module.state_dict(), 'model.pth')
         
         model.eval()

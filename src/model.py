@@ -52,7 +52,7 @@ class Model(nn.Module):
         
         self.backbone = UperNetForSemanticSegmentation(self.config.uper_config)
         
-        self.backbone.eval() # TODO: Necessary to allow evaluation as some layer requies mean??
+        #self.backbone.eval() # TODO: Necessary to allow evaluation as some layer requies mean??
     
         self.crf_chain_1 = NewCRFChain(self.config.in_channels, self.config.crf_dims, self.config.v_dims, self.config.win)
         self.dist_head_1 = DistanceHead(self.config.crf_dims[0])

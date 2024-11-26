@@ -28,10 +28,16 @@ class NYUImageData(BaseImageData):
         
         self.camera_intrinsics = np.linalg.inv(self.camera_intrinsics)
 
+        self.camera_intrinsics_resized = np.array([[fx/4, 0, cx/4, 0 ],
+                                                   [0, fy/4, cy/4, 0],
+                                                   [0, 0, 1, 0],
+                                                   [0, 0, 0, 1]], dtype=np.float32)
+        self.camera_intrinsics_resized = np.linalg.inv(self.camera_intrinsics_resized)
+
         H, W = self.pixel_values.size
 
         mask = np.zeros((W,H), dtype=np.bool)
-        mask[10:470, 10:630] = True
+        mask[45:471, 41:601] = True
 
         # Remove max and min values
         depth_np = np.array(self.depth_values)
@@ -74,7 +80,8 @@ def preprocess_transform(input):
     output["mask"] = mask_transform(input.mask)==1
     output["normal_values"] = normal_transform(input.normal_values)
     output["camera_intrinsics"] = torch.tensor(input.camera_intrinsics)
-
+    output["camera_intrinsics_resized"] = torch.tensor(input.camera_intrinsics_resized)
+    
     return output
 
 def train_transform(input):

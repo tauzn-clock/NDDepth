@@ -2,17 +2,17 @@ import torch
 import torch.nn as nn
 
 
-def silog_loss(depth_gt, depth_est, mask):
-    
-    assert depth_gt.shape == depth_est.shape
-    
-    variance_focus = 0.85
-    scale = 10.0
-    d = torch.log(depth_est[mask]) - torch.log(depth_gt[mask])
-    return torch.sqrt((d ** 2).mean() - variance_focus * (d.mean() ** 2)) * scale
-    #Mathmetically incorrect but necessary engineering hack
-    #batch_error = torch.sqrt((d ** 2).mean(dim=(1,2,3)) - variance_focus * (d.mean(dim=(1,2,3)) ** 2)) * scale
-    #return batch_error
+class silog_loss(nn.Module):
+    def __init__(self, variance_focus):
+        super(silog_loss, self).__init__()
+        self.variance_focus = variance_focus
+
+    def forward(self, depth_est, depth_gt, mask):
+        d = torch.log((depth_est*mask + 1e-7)) - torch.log((depth_gt*mask + 1e-7))
+        return (torch.sqrt((d ** 2).mean(dim=(1,2,3)) - self.variance_focus * (d.mean(dim=(1,2,3)) ** 2))).mean()
+        #Mathmetically incorrect but necessary engineering hack
+        #batch_error = torch.sqrt((d ** 2).mean(dim=(1,2,3)) - variance_focus * (d.mean(dim=(1,2,3)) ** 2)) * scale
+        #return batch_error
 
 def rms_loss(gt, pred):
     assert gt.shape == pred.shape, 'Input tensors must have the same shape'

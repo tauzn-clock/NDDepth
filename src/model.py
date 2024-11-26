@@ -88,14 +88,14 @@ class Model(nn.Module):
         crf_out_2 = self.crf_chain_2(psp_out, features)
         distance = self.dist_head(crf_out_2)
         n2 = self.normal_head(crf_out_2)
-        d2 = self.dn_to_depth(F.normalize(n2, dim=1, p=2), distance, x["camera_intrinsics"])#.clamp(0, self.max_depth)
+        d2 = self.dn_to_depth(F.normalize(n2, dim=1, p=2), distance, x["camera_intrinsics_resized"])#.clamp(0, self.max_depth)
         u2 = self.uncer_head_2(crf_out_2)
 
         context = features[0]
         gru_hidden = torch.cat((crf_out_1, crf_out_2), 1)
         depth1_list, depth2_list  = self.update(d1, u1, d2, u2, context, gru_hidden)
 
-        return depth1_list, u1, depth2_list, u2
+        return depth1_list, u1, depth2_list, u2, n2, distance
 
 class DistanceHead(nn.Module):
     def __init__(self, input_dim=100):

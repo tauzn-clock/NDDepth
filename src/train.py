@@ -16,6 +16,7 @@ import torch.multiprocessing as mp
 from model import Model, ModelConfig
 from dataloader.BaseDataloader import BaseImageDataset
 from dataloader.NYUDataloader import NYUImageData
+from DN_to_distance import DN_to_distance
 from loss import silog_loss, get_metrics
 
 torch.manual_seed(42)
@@ -30,14 +31,16 @@ def init_process_group(local_rank, world_size):
 
 def main(local_rank, world_size):
     init_process_group(local_rank, world_size)
+    
+    BATCH_SIZE = 6
 
-    train_dataset = BaseImageDataset('train', NYUImageData, '/scratchdata/nyu_depth_v2/sync', '/scratchdata/nyu_depth_v2/sync/train.csv')
+    train_dataset = BaseImageDataset('train', NYUImageData, '/scratchdata/nyu_depth_v2/sync', '/NDDepth/src/nyudepthv2_train_files_with_gt_dense.txt')
     train_sampler = torch.utils.data.DistributedSampler(train_dataset, num_replicas=world_size, rank=local_rank)
-    train_dataloader = DataLoader(train_dataset, batch_size=6, pin_memory=True, sampler=train_sampler)
+    train_dataloader = DataLoader(train_dataset, batch_size=BATCH_SIZE, pin_memory=True, sampler=train_sampler)
 
     test_dataset = BaseImageDataset('test', NYUImageData, '/scratchdata/nyu_depth_v2/sync', '/scratchdata/nyu_depth_v2/sync/test.csv')
     test_sampler = torch.utils.data.DistributedSampler(test_dataset, num_replicas=world_size, rank=local_rank)
-    test_dataloader = DataLoader(test_dataset, batch_size=1, pin_memory=True, sampler=test_sampler)
+    test_dataloader = DataLoader(test_dataset, batch_size=BATCH_SIZE, pin_memory=True, sampler=test_sampler)
 
     csv_file = [["silog", "abs_rel", "log10", "rms", "sq_rel", "log_rms", "d1", "d2", "d3"]]
     with open('metric.csv', mode='w', newline='') as file:
@@ -45,6 +48,9 @@ def main(local_rank, world_size):
         writer.writerows(csv_file)
 
     config =  ModelConfig("tiny07")
+    config.batch_size = BATCH_SIZE
+    config.height = 480//4
+    config.width = 640//4
     model = Model(config).to(local_rank)
     model = DDP(model, device_ids=[local_rank], output_device=local_rank, find_unused_parameters=True)
 
@@ -52,18 +58,47 @@ def main(local_rank, world_size):
 
     for epoch in range(1):
         model.train()
+        silog_criterion = silog_loss(variance_focus=0.85)
+        dn_to_distance = DN_to_distance(config.batch_size, config.height * 4, config.width * 4).to(local_rank)
         loop = tqdm.tqdm(train_dataloader, desc=f"Epoch {epoch+1}", unit="batch")
         for _, x in enumerate(loop):
+            optimizer.zero_grad()
+
             for k in x.keys():
                 x[k] = x[k].to(local_rank)
 
-            d1_list, u1, d2_list, u2 = model(x)
+            d1_list, u1, d2_list, u2, norm_est, dist_est = model(x)
+
+            # Post Processing
 
             gt = x["depth_values"]
+            normal_gt = torch.stack([x["normal_values"][:, 0], x["normal_values"][:, 2], x["normal_values"][:, 1]], 1).to(local_rank)
+            normal_gt_norm = F.normalize(normal_gt, dim=1, p=2).to(local_rank)
+            distance_gt = dn_to_distance(gt, normal_gt_norm, x["camera_intrinsics"])
+
             for i in range(len(d1_list)): d1_list[i] = F.interpolate(d1_list[i], size=gt.shape[2:], mode='bilinear', align_corners=False)
             for i in range(len(d2_list)): d2_list[i] = F.interpolate(d2_list[i], size=gt.shape[2:], mode='bilinear', align_corners=False)
             u1 = F.interpolate(u1, size=gt.shape[2:], mode='bilinear', align_corners=False)
             u2 = F.interpolate(u2, size=gt.shape[2:], mode='bilinear', align_corners=False)
+            norm_est = F.interpolate(norm_est, size=gt.shape[2:], mode='bilinear', align_corners=False)
+            dist_est = F.interpolate(dist_est, size=gt.shape[2:], mode='bilinear', align_corners=False)
+
+            # Depth Loss
+
+            loss_depth1_0 = silog_criterion(d1_list[0], gt, x["mask"])
+            loss_depth2_0 = silog_criterion(d2_list[0], gt, x["mask"])
+
+            loss_depth1 = 0
+            loss_depth2 = 0
+            weights_sum = 0
+            for i in range(len(d1_list) - 1):
+                loss_depth1 += (0.85**(len(d1_list)-i-2)) * silog_criterion(d1_list[i + 1], gt, x["mask"])
+                loss_depth2 += (0.85**(len(d2_list)-i-2)) * silog_criterion(d2_list[i + 1], gt, x["mask"])
+                weights_sum += 0.85**(len(d1_list)-i-2)
+            
+            loss_depth = 10 * ((loss_depth1 + loss_depth2) / weights_sum + loss_depth1_0 + loss_depth2_0 )
+            
+            # Uncertainty Loss
 
             uncer1_gt = torch.exp(-5 * torch.abs(gt - d1_list[0].detach()) / (gt + d1_list[0].detach() + 1e-7))
             uncer2_gt = torch.exp(-5 * torch.abs(gt - d2_list[0].detach()) / (gt + d2_list[0].detach() + 1e-7))
@@ -71,21 +106,15 @@ def main(local_rank, world_size):
             loss_uncer1 = torch.abs(u1-uncer1_gt)[x["mask"]].mean()
             loss_uncer2 = torch.abs(u2-uncer2_gt)[x["mask"]].mean()
 
-            loss_depth1_0 = silog_loss(d1_list[0], gt, x["mask"])
-            loss_depth2_0 = silog_loss(d2_list[0], gt, x["mask"])
+            loss_uncer = loss_uncer1 + loss_uncer2
 
-            loss_depth1 = 0
-            loss_depth2 = 0
-            weights_sum = 0
-            for i in range(len(d1_list) - 1):
-                loss_depth1 += (0.85**(len(d1_list)-i-2)) * silog_loss(d1_list[i + 1], gt, x["mask"])
-                loss_depth2 += (0.85**(len(d2_list)-i-2)) * silog_loss(d2_list[i + 1], gt, x["mask"])
-                weights_sum += 0.85**(len(d1_list)-i-2)
+            loss_normal = 5 * ((1 - (normal_gt_norm * norm_est).sum(1, keepdim=True)) * x["mask"]).sum() / (x["mask"] + 1e-7).sum()
+            
+            loss_distance = 0.25 * torch.abs(distance_gt[x["mask"]]- dist_est[x["mask"]]).mean()
 
-            loss = (loss_depth1 + loss_depth2) / weights_sum + loss_depth1_0 + loss_depth2_0 + loss_uncer1 + loss_uncer2
+            loss = loss_depth + loss_uncer + loss_normal + loss_distance
             loss = loss.mean()
 
-            optimizer.zero_grad()
             loss.backward()
             optimizer.step()
             

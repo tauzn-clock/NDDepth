@@ -27,7 +27,7 @@ class BaseImageDataset(Dataset):
         
         self.dataset = []
         with open(csv_path, 'r') as f:
-            reader = csv.reader(f,delimiter=" ")
+            reader = csv.reader(f)
             for row in reader:
                 self.dataset.append(row)
 

@@ -34,11 +34,11 @@ def main(local_rank, world_size):
     
     BATCH_SIZE = 6
 
-    train_dataset = BaseImageDataset('train', NYUImageData, '/scratchdata/nyu_depth_v2/sync', '/NDDepth/src/nyudepthv2_train_files_with_gt_dense.txt')
+    train_dataset = BaseImageDataset('train', NYUImageData, '/scratchdata/nyu_depth_v2/sync', '/NDDepth/src/nyu_train.csv')
     train_sampler = torch.utils.data.DistributedSampler(train_dataset, num_replicas=world_size, rank=local_rank)
     train_dataloader = DataLoader(train_dataset, batch_size=BATCH_SIZE, pin_memory=True, sampler=train_sampler)
 
-    test_dataset = BaseImageDataset('test', NYUImageData, '/scratchdata/nyu_depth_v2/sync', '/scratchdata/nyu_depth_v2/sync/test.csv')
+    test_dataset = BaseImageDataset('test', NYUImageData, '/scratchdata/nyu_depth_v2/official_splits', '/NDDepth/src/nyu_test.csv')
     test_sampler = torch.utils.data.DistributedSampler(test_dataset, num_replicas=world_size, rank=local_rank)
     test_dataloader = DataLoader(test_dataset, batch_size=BATCH_SIZE, pin_memory=True, sampler=test_sampler)
 

@@ -25,6 +25,8 @@ class NYUImageData(BaseImageData):
                                            [0, fy, cy, 0],
                                            [0, 0, 1, 0],
                                            [0, 0, 0, 1]], dtype=np.float32)
+        
+        self.camera_intrinsics = np.linalg.inv(self.camera_intrinsics)
 
         H, W = self.pixel_values.size
 

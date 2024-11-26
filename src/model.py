@@ -1,9 +1,11 @@
 import torch
-from torch import nn
+import torch.nn as nn
+import torch.nn.functional as F
 
 from transformers import Swinv2Config, UperNetConfig, UperNetForSemanticSegmentation
 from newcrf_layers import NewCRFChain
 from BasicUpdateBlockDepth import BasicUpdateBlockDepth
+from DN_to_depth import DN_to_depth
 
 class ModelConfig():
     def __init__(self, version):
@@ -55,15 +57,18 @@ class Model(nn.Module):
         #self.backbone.eval() # TODO: Necessary to allow evaluation as some layer requies mean??
     
         self.crf_chain_1 = NewCRFChain(self.config.in_channels, self.config.crf_dims, self.config.v_dims, self.config.win)
-        self.dist_head_1 = DistanceHead(self.config.crf_dims[0])
+        self.depth_head = DistanceHead(self.config.crf_dims[0])
         self.uncer_head_1 = UncerHead(self.config.crf_dims[0])
         
         self.crf_chain_2 = NewCRFChain(self.config.in_channels, self.config.crf_dims, self.config.v_dims, self.config.win)
-        self.dist_head_2 = DistanceHead(self.config.crf_dims[0])
+        self.dist_head = DistanceHead(self.config.crf_dims[0])
+        self.normal_head = NormalHead(self.config.crf_dims[0])
         self.uncer_head_2 = UncerHead(self.config.crf_dims[0])
         
         self.update = BasicUpdateBlockDepth(context_dim=self.config.in_channels[0])
-        
+
+        self.dn_to_depth = DN_to_depth(self.config.batch_size, self.config.height, self.config.width)
+
     def forward(self, x):
         outputs = self.backbone.backbone.forward_with_filtered_kwargs(**x)
         
@@ -77,11 +82,13 @@ class Model(nn.Module):
         psp_out =self.backbone.decode_head.psp_forward(features)
         
         crf_out_1 = self.crf_chain_1(psp_out, features)     
-        d1 = self.dist_head_1(crf_out_1)
+        d1 = self.depth_head(crf_out_1)
         u1 = self.uncer_head_1(crf_out_1)
         
         crf_out_2 = self.crf_chain_2(psp_out, features)
-        d2 = self.dist_head_2(crf_out_2)
+        distance = self.dist_head(crf_out_2)
+        n2 = self.normal_head(crf_out_2)
+        d2 = self.dn_to_depth(F.normalize(n2, dim=1, p=2), distance, x["camera_intrinsics"])#.clamp(0, self.max_depth)
         u2 = self.uncer_head_2(crf_out_2)
 
         context = features[0]
@@ -99,6 +106,16 @@ class DistanceHead(nn.Module):
     def forward(self, x):
         x = self.sigmoid(self.conv1(x))
         return x
+    
+class NormalHead(nn.Module):
+    def __init__(self, input_dim=100):
+        super(NormalHead, self).__init__()
+        self.conv1 = nn.Conv2d(input_dim, 3, 3, padding=1)
+       
+    def forward(self, x):
+        x = self.conv1(x)
+        return x
+    
 
 class UncerHead(nn.Module):
     def __init__(self, input_dim=100):

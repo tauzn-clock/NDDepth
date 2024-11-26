@@ -23,8 +23,10 @@ def rms_loss(gt, pred):
 
     return rms * scale
 
-def get_metrics(gt, pred):
-    
+def get_metrics(gt, pred, mask):
+    gt = gt * mask + 1e-7
+    pred = pred*mask + 1e-7
+
     thresh = torch.maximum((gt / pred), (pred / gt))
     d1 = (thresh < 1.25).int().float().mean(dim=(1,2,3)).mean()
     d2 = (thresh < 1.25 ** 2).int().float().mean(dim=(1,2,3)).mean()

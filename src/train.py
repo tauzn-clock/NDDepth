@@ -38,7 +38,7 @@ def main(local_rank, world_size):
     train_sampler = torch.utils.data.DistributedSampler(train_dataset, num_replicas=world_size, rank=local_rank)
     train_dataloader = DataLoader(train_dataset, batch_size=BATCH_SIZE, pin_memory=True, sampler=train_sampler)
 
-    test_dataset = BaseImageDataset('test', NYUImageData, '/scratchdata/nyu_depth_v2/official_splits', '/NDDepth/src/nyu_test.csv')
+    test_dataset = BaseImageDataset('test', NYUImageData, '/scratchdata/nyu_depth_v2/official_splits/test', '/NDDepth/src/nyu_test.csv')
     test_sampler = torch.utils.data.DistributedSampler(test_dataset, num_replicas=world_size, rank=local_rank)
     test_dataloader = DataLoader(test_dataset, batch_size=BATCH_SIZE, pin_memory=True, sampler=test_sampler)
 
@@ -52,18 +52,18 @@ def main(local_rank, world_size):
     config.height = 480//4
     config.width = 640//4
     model = Model(config).to(local_rank)
+    model.backbone.backbone.from_pretrained("microsoft/swinv2-tiny-patch4-window8-256")
     model = DDP(model, device_ids=[local_rank], output_device=local_rank, find_unused_parameters=True)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
 
-    for epoch in range(1):
+    for epoch in range(50):
         model.train()
         silog_criterion = silog_loss(variance_focus=0.85)
         dn_to_distance = DN_to_distance(config.batch_size, config.height * 4, config.width * 4).to(local_rank)
         loop = tqdm.tqdm(train_dataloader, desc=f"Epoch {epoch+1}", unit="batch")
         for _, x in enumerate(loop):
             optimizer.zero_grad()
-
             for k in x.keys():
                 x[k] = x[k].to(local_rank)
 
@@ -126,21 +126,24 @@ def main(local_rank, world_size):
         torch.save(model.module.state_dict(), 'model.pth')
         
         model.eval()
+        torch.cuda.empty_cache()
         tot_metric = [0 for _ in range(9)]
         cnt = 0
-        for _, x in enumerate(tqdm.tqdm(test_dataloader)):
-            for k in x.keys():
-                x[k] = x[k].to(local_rank)
+        with torch.no_grad():
+            for _, x in enumerate(tqdm.tqdm(test_dataloader)):
+                if x["pixel_values"].shape[0]!=BATCH_SIZE: break
+                for k in x.keys():
+                    x[k] = x[k].to(local_rank)
+                    
+                d1_list, _, d2_list, _, _, _ = model(x)
                 
-            d1_list, _, d2_list, _ = model(x)
-            
-            gt = x["depth_values"]
-            d1 = F.interpolate(d1_list[-1], size=gt.shape[2:], mode='bilinear', align_corners=False)
-            d2 = F.interpolate(d2_list[-1], size=gt.shape[2:], mode='bilinear', align_corners=False)
-            
-            metric = get_metrics(gt, (d1 + d2)/2)
-            for i in range(9): tot_metric[i] += metric[i].cpu().detach().item()
-            cnt+=1
+                gt = x["depth_values"]
+                d1 = F.interpolate(d1_list[-1], size=gt.shape[2:], mode='bilinear', align_corners=False)
+                d2 = F.interpolate(d2_list[-1], size=gt.shape[2:], mode='bilinear', align_corners=False)
+                
+                metric = get_metrics(gt, (d1 + d2)/2, x["mask"])
+                for i in range(9): tot_metric[i] += metric[i].cpu().detach().item()
+                cnt+=1
 
         for i in range(9): tot_metric[i]/=cnt
         print(tot_metric)

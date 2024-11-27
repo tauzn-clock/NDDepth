@@ -32,7 +32,7 @@ def init_process_group(local_rank, world_size):
 def main(local_rank, world_size):
     init_process_group(local_rank, world_size)
     
-    BATCH_SIZE = 6
+    BATCH_SIZE = 8
 
     train_dataset = BaseImageDataset('train', NYUImageData, '/scratchdata/nyu_depth_v2/sync', '/NDDepth/src/nyu_train.csv')
     train_sampler = torch.utils.data.DistributedSampler(train_dataset, num_replicas=world_size, rank=local_rank)
@@ -131,7 +131,7 @@ def main(local_rank, world_size):
         cnt = 0
         with torch.no_grad():
             for _, x in enumerate(tqdm.tqdm(test_dataloader)):
-                if x["pixel_values"].shape[0]!=BATCH_SIZE: break
+                #if x["pixel_values"].shape[0]!=BATCH_SIZE: break
                 for k in x.keys():
                     x[k] = x[k].to(local_rank)
                     

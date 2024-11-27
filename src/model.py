@@ -67,7 +67,7 @@ class Model(nn.Module):
         
         self.update = BasicUpdateBlockDepth(context_dim=self.config.in_channels[0])
 
-        self.dn_to_depth = DN_to_depth(self.config.batch_size, self.config.height, self.config.width)
+        #self.dn_to_depth = DN_to_depth(self.config.batch_size, self.config.height, self.config.width)
 
     def forward(self, x):
         outputs = self.backbone.backbone.forward_with_filtered_kwargs(**x)
@@ -88,7 +88,12 @@ class Model(nn.Module):
         crf_out_2 = self.crf_chain_2(psp_out, features)
         distance = self.dist_head(crf_out_2)
         n2 = self.normal_head(crf_out_2)
-        d2 = self.dn_to_depth(F.normalize(n2, dim=1, p=2), distance, x["camera_intrinsics_resized"])#.clamp(0, self.max_depth)
+
+        b, _, h, w =  n2.shape 
+        device = n2.device  
+        dn_to_depth = DN_to_depth(b, h, w).to(device) # DX: Layer to converts normal + distance to depth
+
+        d2 = dn_to_depth(F.normalize(n2, dim=1, p=2), distance, x["camera_intrinsics_resized"])#.clamp(0, self.max_depth)
         u2 = self.uncer_head_2(crf_out_2)
 
         context = features[0]

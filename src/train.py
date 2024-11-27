@@ -18,6 +18,7 @@ from dataloader.BaseDataloader import BaseImageDataset
 from dataloader.NYUDataloader import NYUImageData
 from DN_to_distance import DN_to_distance
 from loss import silog_loss, get_metrics
+from segmentation import compute_seg, get_smooth_ND
 
 torch.manual_seed(42)
 
@@ -104,14 +105,24 @@ def main(local_rank, world_size):
             loss_normal = 5 * ((1 - (normal_gt_norm * norm_est).sum(1, keepdim=True))[x["mask"]]).mean() #* x["mask"]).sum() / (x["mask"] + 1e-7).sum()
             loss_distance = 0.25 * torch.abs(distance_gt- dist_est)[x["mask"]].mean()
 
-            loss = loss_depth + loss_uncer + loss_normal + loss_distance
+            # Segmentation Loss
+            segment, planar_mask, dissimilarity_map = compute_seg(x["pixel_values"], norm_est, dist_est[:, 0])
+            loss_grad_normal, loss_grad_distance = get_smooth_ND(norm_est, dist_est, planar_mask)
+
+            loss_seg = 0.01 * (loss_grad_distance + loss_grad_normal)
+
+            loss = loss_depth + loss_uncer + loss_normal + loss_distance + loss_seg
             loss = loss.mean()
 
             loss.backward()
             optimizer.step()
             
-            loop.set_postfix(loss=loss.item())
-            custom_message = f"Loss_depth: {loss_depth.item()}, Loss_uncer: {loss_uncer.item()}, Loss_normal: {loss_normal.item()}, Loss_distance: {loss_distance.item()}"
+            #loop.set_postfix(loss=loss.item())
+            custom_message = "Depth: {:.3g}, ".format(loss_depth.item())
+            custom_message += "Uncer: {:.3g}, ".format(loss_uncer.item())
+            custom_message += "Normal: {:.3g}, ".format(loss_normal.item())
+            custom_message += "Dist: {:.3g}, ".format(loss_distance.item())
+            custom_message += "Seg: {:.3g}".format(loss_seg.item())
             loop.set_postfix(message=custom_message)
         # Reduce learning rate
         for param_group in optimizer.param_groups:

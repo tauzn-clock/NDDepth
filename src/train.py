@@ -108,9 +108,8 @@ def main(local_rank, world_size):
 
             loss_uncer = loss_uncer1 + loss_uncer2
 
-            loss_normal = 5 * ((1 - (normal_gt_norm * norm_est).sum(1, keepdim=True)) * x["mask"]).sum() / (x["mask"] + 1e-7).sum()
-            
-            loss_distance = 0.25 * torch.abs(distance_gt[x["mask"]]- dist_est[x["mask"]]).mean()
+            loss_normal = 5 * ((1 - (normal_gt_norm * norm_est).sum(1, keepdim=True))[x["mask"]]).mean() #* x["mask"]).sum() / (x["mask"] + 1e-7).sum()
+            loss_distance = 0.25 * torch.abs(distance_gt- dist_est)[x["mask"]].mean()
 
             loss = loss_depth + loss_uncer + loss_normal + loss_distance
             loss = loss.mean()
@@ -119,6 +118,8 @@ def main(local_rank, world_size):
             optimizer.step()
             
             loop.set_postfix(loss=loss.item())
+            custom_message = f"Loss_depth: {loss_depth.item()}, Loss_uncer: {loss_uncer.item()}, Loss_normal: {loss_normal.item()}, Loss_distance: {loss_distance.item()}"
+            loop.set_postfix(message=custom_message)
         # Reduce learning rate
         for param_group in optimizer.param_groups:
             param_group['lr'] *= 0.9999

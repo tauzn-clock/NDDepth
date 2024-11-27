@@ -51,6 +51,7 @@ def main(local_rank, world_size):
     config.batch_size = BATCH_SIZE
     config.height = 480//4
     config.width = 640//4
+    config.max_depth = 10
     model = Model(config).to(local_rank)
     model.backbone.backbone.from_pretrained("microsoft/swinv2-tiny-patch4-window8-256")
     model = DDP(model, device_ids=[local_rank], output_device=local_rank, find_unused_parameters=True)
@@ -75,13 +76,6 @@ def main(local_rank, world_size):
             normal_gt = torch.stack([x["normal_values"][:, 0], x["normal_values"][:, 2], x["normal_values"][:, 1]], 1).to(local_rank)
             normal_gt_norm = F.normalize(normal_gt, dim=1, p=2).to(local_rank)
             distance_gt = dn_to_distance(gt, normal_gt_norm, x["camera_intrinsics"])
-
-            for i in range(len(d1_list)): d1_list[i] = F.interpolate(d1_list[i], size=gt.shape[2:], mode='bilinear', align_corners=False)
-            for i in range(len(d2_list)): d2_list[i] = F.interpolate(d2_list[i], size=gt.shape[2:], mode='bilinear', align_corners=False)
-            u1 = F.interpolate(u1, size=gt.shape[2:], mode='bilinear', align_corners=False)
-            u2 = F.interpolate(u2, size=gt.shape[2:], mode='bilinear', align_corners=False)
-            norm_est = F.interpolate(norm_est, size=gt.shape[2:], mode='bilinear', align_corners=False)
-            dist_est = F.interpolate(dist_est, size=gt.shape[2:], mode='bilinear', align_corners=False)
 
             # Depth Loss
 
@@ -139,8 +133,8 @@ def main(local_rank, world_size):
                 d1_list, _, d2_list, _, _, _ = model(x)
                 
                 gt = x["depth_values"]
-                d1 = F.interpolate(d1_list[-1], size=gt.shape[2:], mode='bilinear', align_corners=False)
-                d2 = F.interpolate(d2_list[-1], size=gt.shape[2:], mode='bilinear', align_corners=False)
+                d1 = d1_list[-1]
+                d2 = d2_list[-1]
                 
                 metric = get_metrics(gt, (d1 + d2)/2, x["mask"])
                 for i in range(9): tot_metric[i] += metric[i].cpu().detach().item()

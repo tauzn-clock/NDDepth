@@ -81,10 +81,12 @@ class Model(nn.Module):
             
         psp_out =self.backbone.decode_head.psp_forward(features)
         
+        # Depth
         crf_out_1 = self.crf_chain_1(psp_out, features)     
         d1 = self.depth_head(crf_out_1)
         u1 = self.uncer_head_1(crf_out_1)
         
+        # Normal Distance
         crf_out_2 = self.crf_chain_2(psp_out, features)
         distance = self.dist_head(crf_out_2)
         n2 = self.normal_head(crf_out_2)
@@ -93,13 +95,24 @@ class Model(nn.Module):
         device = n2.device  
         dn_to_depth = DN_to_depth(b, h, w).to(device) # DX: Layer to converts normal + distance to depth
 
+        distance = distance * self.config.max_depth 
         n2 = F.normalize(n2, dim=1, p=2)
-        d2 = dn_to_depth(n2, distance, x["camera_intrinsics_resized"])#.clamp(0, self.max_depth)
+        d2 = dn_to_depth(n2, distance, x["camera_intrinsics_resized"]).clamp(0, self.config.max_depth)/self.config.max_depth 
         u2 = self.uncer_head_2(crf_out_2)
 
+        # Iterative refinement
         context = features[0]
         gru_hidden = torch.cat((crf_out_1, crf_out_2), 1)
         depth1_list, depth2_list  = self.update(d1, u1, d2, u2, context, gru_hidden)
+
+        # Resize
+        _, _, a, b = x["pixel_values"].shape
+        for i in range(len(depth1_list)): depth1_list[i] = F.interpolate(depth1_list[i], size=(a,b), mode='bilinear', align_corners=False) * self.config.max_depth 
+        for i in range(len(depth2_list)): depth2_list[i] = F.interpolate(depth2_list[i], size=(a,b), mode='bilinear', align_corners=False) * self.config.max_depth 
+        u1 = F.interpolate(u1, size=(a,b), mode='bilinear', align_corners=False)
+        u2 = F.interpolate(u2, size=(a,b), mode='bilinear', align_corners=False)
+        n2 = F.interpolate(n2, size=(a,b), mode='bilinear', align_corners=False)
+        distance = F.interpolate(distance, size=(a,b), mode='bilinear', align_corners=False)
 
         return depth1_list, u1, depth2_list, u2, n2, distance
 

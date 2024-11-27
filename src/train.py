@@ -51,7 +51,6 @@ def main(local_rank, world_size):
     config.batch_size = BATCH_SIZE
     config.height = 480//4
     config.width = 640//4
-    config.max_depth = 10
     model = Model(config).to(local_rank)
     model.backbone.backbone.from_pretrained("microsoft/swinv2-tiny-patch4-window8-256")
     model = DDP(model, device_ids=[local_rank], output_device=local_rank, find_unused_parameters=True)

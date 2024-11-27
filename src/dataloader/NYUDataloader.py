@@ -34,6 +34,9 @@ class NYUImageData(BaseImageData):
                                                    [0, 0, 0, 1]], dtype=np.float32)
         self.camera_intrinsics_resized = np.linalg.inv(self.camera_intrinsics_resized)
 
+        self.depth_rescale = float(args[7])
+        self.depth_max = float(args[8])
+
         H, W = self.pixel_values.size
 
         mask = np.zeros((W,H), dtype=np.bool)
@@ -76,11 +79,12 @@ def preprocess_transform(input):
 
     output = {}
     output["pixel_values"] = img_transform(input.pixel_values)
-    output["depth_values"] = depth_transform(input.depth_values)
+    output["depth_values"] = depth_transform(input.depth_values) / input.depth_rescale
     output["mask"] = mask_transform(input.mask)==1
     output["normal_values"] = normal_transform(input.normal_values)
     output["camera_intrinsics"] = torch.tensor(input.camera_intrinsics)
     output["camera_intrinsics_resized"] = torch.tensor(input.camera_intrinsics_resized)
+    output["max_depth"] = input.depth_max
     
     return output
 

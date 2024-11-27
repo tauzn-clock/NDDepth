@@ -95,9 +95,8 @@ class Model(nn.Module):
         device = n2.device  
         dn_to_depth = DN_to_depth(b, h, w).to(device) # DX: Layer to converts normal + distance to depth
 
-        distance = distance * self.config.max_depth 
         n2 = F.normalize(n2, dim=1, p=2)
-        d2 = dn_to_depth(n2, distance, x["camera_intrinsics_resized"]).clamp(0, self.config.max_depth)/self.config.max_depth 
+        d2 = dn_to_depth(n2, distance, x["camera_intrinsics_resized"]).clamp(0, 1)
         u2 = self.uncer_head_2(crf_out_2)
 
         # Iterative refinement
@@ -107,8 +106,9 @@ class Model(nn.Module):
 
         # Resize
         _, _, a, b = x["pixel_values"].shape
-        for i in range(len(depth1_list)): depth1_list[i] = F.interpolate(depth1_list[i], size=(a,b), mode='bilinear', align_corners=False) * self.config.max_depth 
-        for i in range(len(depth2_list)): depth2_list[i] = F.interpolate(depth2_list[i], size=(a,b), mode='bilinear', align_corners=False) * self.config.max_depth 
+        max_depth = x["max_depth"].view(-1, 1, 1, 1)
+        for i in range(len(depth1_list)): depth1_list[i] = F.interpolate(depth1_list[i], size=(a,b), mode='bilinear', align_corners=False) * max_depth
+        for i in range(len(depth2_list)): depth2_list[i] = F.interpolate(depth2_list[i], size=(a,b), mode='bilinear', align_corners=False) * max_depth
         u1 = F.interpolate(u1, size=(a,b), mode='bilinear', align_corners=False)
         u2 = F.interpolate(u2, size=(a,b), mode='bilinear', align_corners=False)
         n2 = F.interpolate(n2, size=(a,b), mode='bilinear', align_corners=False)
